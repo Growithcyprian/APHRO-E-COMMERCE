@@ -1,12 +1,18 @@
+﻿
 'use client'
 import { assets } from "@/assets/assets"
 import { useEffect, useState } from "react"
 import Image from "next/image"
 import toast from "react-hot-toast"
 import Loading from "@/components/Loading"
+import { useUser, useAuth } from "@clerk/nextjs"
+import { useRouter } from "next/navigation"
+import axios from "axios"
 
 export default function CreateStore() {
-
+    const { user } = useUser()
+    const router = useRouter()
+    const { getToken } = useAuth()
     const [alreadySubmitted, setAlreadySubmitted] = useState(false)
     const [status, setStatus] = useState("")
     const [loading, setLoading] = useState(true)
@@ -27,22 +33,99 @@ export default function CreateStore() {
     }
 
     const fetchSellerStatus = async () => {
-        // Logic to check if the store is already submitted
+        try {
+            const token = await getToken()
 
+            const { data } = await axios.get("/api/inngest/store/status", {
+                headers: {
+                    Authorization: "Bearer " + token
+                }
+            })
 
-        setLoading(false)
+            if (["approved", "rejected", "pending"].includes(data.status)) {
+                setAlreadySubmitted(true)
+                setStatus(data.status)
+
+                switch (data.status) {
+                    case "approved":
+                        setMessage("Your store has been approved. Redirecting to dashboard...")
+                        setTimeout(() => {
+                            router.push("/store")
+                        }, 5000)
+                        break
+
+                    case "rejected":
+                        setMessage("Your store has been rejected. Please contact support for more information.")
+                        break
+
+                    case "pending":
+                        setMessage("Your store is pending approval. Please wait for admin review.")
+                        break
+
+                    default:
+                        break
+                }
+            } else {
+                setAlreadySubmitted(false)
+            }
+        } catch (error) {
+            toast.error(error?.response?.data?.error || error.message)
+        } finally {
+            setLoading(false)
+        }
     }
 
     const onSubmitHandler = async (e) => {
         e.preventDefault()
-        // Logic to submit the store details
 
+        if (!user) {
+            return toast("Please Login to Continue")
+        }
 
+        try {
+            const token = await getToken()
+            const formData = new FormData()
+
+            formData.append("name", storeInfo.name)
+            formData.append("username", storeInfo.username)
+            formData.append("description", storeInfo.description)
+            formData.append("email", storeInfo.email)
+            formData.append("contact", storeInfo.contact)
+            formData.append("address", storeInfo.address)
+            formData.append("image", storeInfo.image)
+
+            const { data } = await axios.post("/api/inngest/store/create", formData, {
+                headers: {
+                    Authorization: "Bearer " + token
+                }
+            })
+
+            toast.success("Store details submitted successfully. Please wait for admin approval.")
+            await fetchSellerStatus()
+
+        } catch (error) {
+            console.error(error)
+            toast.error("An error occurred while submitting the store details.")
+        }
     }
 
     useEffect(() => {
-        fetchSellerStatus()
-    }, [])
+        if (user) {
+            fetchSellerStatus()
+        } else {
+            setLoading(false)
+        }
+    }, [user])
+
+    if (!user) {
+        return (
+            <div className="min-h-[80vh] flex flex-col items-center justify-center">
+                <p className="sm:text-2xl lg:text-3xl mx-5 font-semibold text-slate-500 text-center max-w-2xl">
+                    Please <span className="text-blue-500 underline">login</span> to Continue.
+                </p>
+            </div>
+        )
+    }
 
     return !loading ? (
         <>
@@ -51,8 +134,8 @@ export default function CreateStore() {
                     <form onSubmit={e => toast.promise(onSubmitHandler(e), { loading: "Submitting data..." })} className="max-w-7xl mx-auto flex flex-col items-start gap-3 text-slate-500">
                         {/* Title */}
                         <div>
-                            <h1 className="text-3xl ">Add Your <span className="text-slate-800 font-medium">Store</span></h1>
-                            <p className="max-w-lg">To become a seller on GoCart, submit your store details for review. Your store will be activated after admin verification.</p>
+                            <h1 className="text-3xl">Add Your <span className="text-slate-800 font-medium">Store</span></h1>
+                            <p className="max-w-lg">To become a seller on APHRO ECOMMERCE, submit your store details for review. Your store will be activated after admin verification.</p>
                         </div>
 
                         <label className="mt-10 cursor-pointer">
@@ -79,7 +162,7 @@ export default function CreateStore() {
                         <p>Address</p>
                         <textarea name="address" onChange={onChangeHandler} value={storeInfo.address} rows={5} placeholder="Enter your store address" className="border border-slate-300 outline-slate-400 w-full max-w-lg p-2 rounded resize-none" />
 
-                        <button className="bg-slate-800 text-white px-12 py-2 rounded mt-10 mb-40 active:scale-95 hover:bg-slate-900 transition ">Submit</button>
+                        <button className="bg-slate-800 text-white px-12 py-2 rounded mt-10 mb-40 active:scale-95 hover:bg-slate-900 transition">Submit</button>
                     </form>
                 </div>
             ) : (
